@@ -53,7 +53,6 @@ void loop(){
    lcd.print("Temp. ");
    lcd.print(DHT.temperature); 
    delay(5000);*/
-   //
   
   //Water Sensor 
   /*write_pb(POWER_PIN, 1);
