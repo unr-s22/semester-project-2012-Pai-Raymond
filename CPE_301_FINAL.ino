@@ -21,7 +21,8 @@ unsigned int value = 0; // variable to store the sensor value
 //stepper motor var
 const int button =  6; // direction control button is connected to Arduino pin 6
 const int pot = A0; // speed control potentiometer is connected to analog pin 0
-int direction_ = 1, speed_ = 500;
+const int speed_ = 500;
+int direction_ = 1,
 
 //LCD var
 const int RS = 11, EN = 10, D4 = 2, D5 = 3, D6 = 4, D7 = 5;
