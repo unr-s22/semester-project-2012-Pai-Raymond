@@ -63,16 +63,17 @@ void setup(){
  pinMode(buttonPin, INPUT);
  pinMode(buttonReset, INPUT);
  
- /*pinMode(ledPinG, OUTPUT);
+ pinMode(ledPinG, OUTPUT);
  pinMode(ledPinY, OUTPUT);
  pinMode(ledPinB, OUTPUT);
- pinMode(ledPinR, OUTPUT);*/
+ pinMode(ledPinR, OUTPUT);
  
  //Stepper Motor Setup
  pinMode(button, INPUT_PULLUP);
  //Water Sensor
  adc_init();
 
+//Water Sensor Setup
  set_PB_as_output(POWER_PIN);
  write_pb(POWER_PIN, 0);
 
