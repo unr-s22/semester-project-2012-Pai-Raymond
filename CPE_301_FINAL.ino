@@ -1,9 +1,17 @@
 #include <dht.h>
 #include <LiquidCrystal.h>
 #include <Stepper.h>
-
-volatile unsigned char* port_b = (unsigned char*) 0x25; 
-volatile unsigned char* ddr_b  = (unsigned char*) 0x24; 
+#include <Wire.h>
+#include <ds3231.h>
+ 
+volatile unsigned char *myTCCR1A = (unsigned char *) 0x80;
+volatile unsigned char *myTCCR1B = (unsigned char *) 0x81;
+volatile unsigned char *myTCCR1C = (unsigned char *) 0x82;
+volatile unsigned char *myTIMSK1 = (unsigned char *) 0x6F;
+volatile unsigned int  *myTCNT1  = (unsigned  int *) 0x84;
+volatile unsigned char *myTIFR1 =  (unsigned char *) 0x36;
+volatile unsigned char* ddr_b  = (unsigned char*) 0x24;
+volatile unsigned char* port_b = (unsigned char*) 0x25;
 volatile unsigned char* pin_b  = (unsigned char*) 0x23;
 
 #define dht_apin A2 // Analog Pin sensor is connected to
@@ -11,18 +19,17 @@ volatile unsigned char* pin_b  = (unsigned char*) 0x23;
 #define SIGNAL_PIN 1 // water sensor analog pin
 #define THRESHOLD 8 // water sensor threshold limit
 #define STEPS 32 // stepper motor steps
+#define TEMPHOLD 20.0 // Temperatrue Thresholt
 
-LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
-Stepper stepper(STEPS, 8, 10, 9, 11);
 
 //water sensor var
 unsigned int value = 0; // variable to store the sensor value
 
 //stepper motor var
-const int button =  6; // direction control button is connected to Arduino pin 6
+const int button = 6; // direction control button is connected to Arduino pin 6
 const int pot = A0; // speed control potentiometer is connected to analog pin 0
 const int speed_ = 500;
-int direction_ = 1,
+int direction_ = 1;
 
 //LCD var
 const int RS = 11, EN = 10, D4 = 2, D5 = 3, D6 = 4, D7 = 5;
@@ -30,35 +37,79 @@ const int RS = 11, EN = 10, D4 = 2, D5 = 3, D6 = 4, D7 = 5;
 //Humidity and Temperature var
 dht DHT;
 
+//Real-Time Clock var
+struct ts t;
+
+const int buttonPin = 8;
+const int buttonReset = 9;
+//const int mainLED;
+const int ledPinG = 22;
+const int ledPinY = 24;
+const int ledPinB = 26;
+const int ledPinR = 28;
+
+LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
+Stepper stepper(STEPS, 8, 10, 9, 11);
+
+boolean oldSwitchState = LOW;
+boolean newSwitchState = LOW;
+boolean LEDstatus = LOW;
+boolean Disabled = false, Idle = false, Running = false, Error = false;
+
 void setup(){
  Serial.begin(9600);
- pinMode(button, INPUT_PULLUP);
  
+ pinMode(buttonPin, INPUT);
+ pinMode(buttonReset, INPUT);
+ 
+ /*pinMode(ledPinG, OUTPUT);
+ pinMode(ledPinY, OUTPUT);
+ pinMode(ledPinB, OUTPUT);
+ pinMode(ledPinR, OUTPUT);*/
+ 
+ //Stepper Motor Setup
+ pinMode(button, INPUT_PULLUP);
+ //Water Sensor
  adc_init();
 
  set_PB_as_output(POWER_PIN);
  write_pb(POWER_PIN, 0);
- 
+
+ //LCD Setup
  lcd.begin(16, 2); // set up number of columns and rows
  delay(500);//Delay to let Temp/Hum Sensor system boot
  delay(1000);//Wait before accessing Temp/Hum Sensor
+ 
+ //Real Time Clock Setup
+  Wire.begin();
+  DS3231_init(DS3231_CONTROL_INTCN);
+  /*----------------------------------------------------------------------------
+  In order to synchronise your clock module, insert timetable values below !
+  ----------------------------------------------------------------------------*/
+  t.hour=12; 
+  t.min=30;
+  t.sec=0;
+  t.mday=25;
+  t.mon=12;
+  t.year=2019;
+ 
+  DS3231_set(t); 
 }
-//_Bool Disabled, Idle, Running, Error;
 void loop(){
   //LCD Monitor with Temp/Hum Sensor 
    /*DHT.read11(dht_apin);
    lcd.setCursor(0, 0);
-   lcd.print("Hum. ");
+   lcd.print("R");
+   lcd.setCursor(3, 0);
+   lcd.print("Hum.   ");
    lcd.print(DHT.humidity);
-   lcd.setCursor(0, 1);
-   lcd.print("Temp. ");
+   lcd.setCursor(3, 1);
+   lcd.print("Temp.  ");
    lcd.print(DHT.temperature); 
    delay(5000);*/
   
   //Water Sensor 
-  /*write_pb(POWER_PIN, 1);
-  
-  delay(10);                   
+  /*write_pb(POWER_PIN, 1);               
   value = adc_read(SIGNAL_PIN);
   write_pb(POWER_PIN, 0);
   //digitalWrite(POWER_PIN, 0);
@@ -79,6 +130,117 @@ void loop(){
     stepper.setSpeed(speed_);
     stepper.step(direction_);
   */
+
+  //Real-Time Clock
+  /*DS3231_get(&t);
+  Serial.print("Date : ");
+  Serial.print(t.mday);
+  Serial.print("/");
+  Serial.print(t.mon);
+  Serial.print("/");
+  Serial.print(t.year);
+  Serial.print("\t Hour : ");
+  Serial.print(t.hour);
+  Serial.print(":");
+  Serial.print(t.min);
+  Serial.print(".");
+  Serial.println(t.sec);
+ 
+  delay(1000);*/
+  newSwitchState = digitalRead(buttonPin);
+  if(newSwitchState != oldSwitchState){
+    if(newSwitchState == HIGH){
+      Running = true;
+      if(LEDstatus == LOW){
+        //digitalWrite(mainLED, HIGH);
+        LEDstatus = HIGH;
+        if ( digitalRead(button) == 0 )  // if button is pressed
+        if ( debounce() )  // debounce button signal
+        {
+          direction_ *= -1;  // reverse direction variable
+          while ( debounce() ) ;  // wait for button release
+        }
+        stepper.setSpeed(speed_);
+        stepper.step(direction_); 
+        write_pb(POWER_PIN, 1);
+        value = adc_read(SIGNAL_PIN);
+        write_pb(POWER_PIN, 0);
+        if(Running == true){
+          DHT.read11(dht_apin);
+          lcd.setCursor(0, 0);
+          lcd.print("R");
+          lcd.setCursor(3, 0);
+          lcd.print("Hum.   ");
+          lcd.print(DHT.humidity);
+          lcd.setCursor(3, 1);
+          lcd.print("Temp.  ");
+          lcd.print(DHT.temperature); 
+          write_pb(ledPinB, 1);
+          Disabled = false;
+          if(DHT.temperature <= TEMPHOLD){
+            Idle = true;
+            Running = false;
+            write_pb(ledPinB, 0);
+          }
+          if(value < THRESHOLD){
+            Error = true;
+            Running = false;
+            write_pb(ledPinB, 0);
+          } 
+        }
+        if(Idle == true){
+          DHT.read11(dht_apin);
+          lcd.setCursor(0, 0);
+          lcd.print("I");
+          lcd.print("Hum.   ");
+          lcd.print(DHT.humidity);
+          lcd.setCursor(3, 0);
+          lcd.setCursor(3, 1);
+          lcd.print("Temp.  ");
+          lcd.print(DHT.temperature); 
+          write_pb(ledPinG, 1);
+          Disabled = false;
+          if(DHT.temperature > TEMPHOLD){
+            Running = true;
+            Idle = false;
+            write_pb(ledPinG, 0);
+          }
+          if(value <= THRESHOLD){
+            Error = true;
+            Idle = false;
+            write_pb(ledPinG, 0);
+          }
+        }
+        if(Error == true){
+          Disabled = false;
+          stepper.setSpeed(0);
+          lcd.setCursor(0, 0);
+          write_pb(ledPinR, 1);
+          lcd.print("Water Level Too Low");
+          if(digitalRead(buttonReset) == 1){
+            write_pb(ledPinR, 0);
+            Idle = true;
+            stepper.setSpeed(speed_);
+            Error = false;
+          }
+        }
+        if(Disabled == true){
+          Idle = true;
+          write_pb(ledPinY, 1);
+          //Don't know how to do ISR, someone figure it out for me pls - Raymond
+        }
+      }
+      else{
+        //digitalWrite(mainLED, LOW);
+        LEDstatus = LOW;
+        Running = false;
+        Idle = false;
+        Error = false;
+        Disabled = false;
+      }
+    }
+    oldSwitchState = newSwitchState;
+  }
 }
 void set_PB_as_output(unsigned char pin_num)
 {
@@ -94,6 +256,17 @@ void write_pb(unsigned char pin_num, unsigned char state)
   {
     *port_b |= 0x01 << pin_num;
   }
+}
+bool debounce()
+{
+  byte count = 0;
+  for(byte i = 0; i < 5; i++) {
+    if (digitalRead(button) == 0)
+      count++;
+    delay(10);
+  }
+  if(count > 2)  return 1;
+  else           return 0;
 }
 void adc_init()
 {
@@ -113,8 +286,7 @@ void adc_init()
   ADMUX  &= ~(1<<5); // clear bit 5 to 0 for right adjust result
   ADMUX  &= (0b11100000); // clear bit 4-0 to 0 to reset the channel and gain bits
 }
-unsigned int adc_read(unsigned char adc_channel_num)
-{
+unsigned int adc_read(unsigned char adc_channel_num){
   // reset the channel and gain bits
   ADMUX  &= (0b11100000);
   
@@ -141,4 +313,12 @@ unsigned int adc_read(unsigned char adc_channel_num)
   while((ADCSRA) & (1<<6));
   // return the result in the ADC data register
   return ADCL + ADCH * 256;
+}
+void my_delay(unsigned int ticks){
+  *myTCCR1B &= 0xF8;
+  *myTCNT1 = (unsigned int) (65536 - ticks);
+  *myTCCR1B |= 0x01;
+  while((*myTIFR1 & 0x01) == 0);
+  *myTCCR1B &= 0xF8;
+  *myTIFR1 |= 0x01;
 }
