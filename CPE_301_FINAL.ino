@@ -40,8 +40,9 @@ dht DHT;
 //Real-Time Clock var
 struct ts t;
 
-const int buttonPin = 8;
-const int buttonReset = 9;
+const int buttonStart = 8;
+const int buttonStop = 9;
+const int buttonReset = 32;
 //const int mainLED;
 const int ledPinG = 22;
 const int ledPinY = 24;
@@ -55,25 +56,29 @@ Stepper stepper(STEPS, 8, 10, 9, 11);
 boolean oldSwitchState = LOW;
 boolean newSwitchState = LOW;
 boolean LEDstatus = LOW;
-boolean Disabled = false, Idle = false, Running = true, Error = false;
+boolean Idle = false, Running = true, Error = false;
 
 void setup(){
  Serial.begin(9600);
  
- pinMode(buttonPin, INPUT);
+ pinMode(buttonStart, INPUT);
  pinMode(buttonReset, INPUT);
+ pinMode(buttonStop, INPUT);
  
  pinMode(ledPinG, OUTPUT);
  pinMode(ledPinY, OUTPUT);
  pinMode(ledPinB, OUTPUT);
  pinMode(ledPinR, OUTPUT);
  
+ write_pb(ledPinG, 0);
+ write_pb(ledPinY, 0);
+ write_pb(ledPinB, 0);
+ write_pb(ledPinR, 0);
+ 
  //Stepper Motor Setup
  pinMode(button, INPUT_PULLUP);
- //Water Sensor
+ //Water Sensor Setup
  adc_init();
-
-//Water Sensor Setup
  set_PB_as_output(POWER_PIN);
  write_pb(POWER_PIN, 0);
 
@@ -83,19 +88,19 @@ void setup(){
  delay(1000);//Wait before accessing Temp/Hum Sensor
  
  //Real Time Clock Setup
-  Wire.begin();
-  DS3231_init(DS3231_CONTROL_INTCN);
+ Wire.begin();
+ DS3231_init(DS3231_CONTROL_INTCN);
   /*----------------------------------------------------------------------------
   In order to synchronise your clock module, insert timetable values below !
   ----------------------------------------------------------------------------*/
-  t.hour=12; 
-  t.min=30;
-  t.sec=0;
-  t.mday=25;
-  t.mon=4;
-  t.year=2022;
+ t.hour = 12; 
+ t.min = 30;
+ t.sec = 0;
+ t.mday = 25;
+ t.mon = 4;
+ t.year = 2022;
  
-  DS3231_set(t); 
+ DS3231_set(t); 
 }
 void loop(){
   //LCD Monitor with Temp/Hum Sensor 
@@ -150,157 +155,125 @@ void loop(){
  
   delay(1000);*/
   
-  //Debounce Method
-  if(debounce(buttonPin)){
-    if ( digitalRead(button) == 0 )  // if button is pressed
-        if ( stepDebounce() )  // debounce button signal
-        {
-          direction_ *= -1;  // reverse direction variable
+//Debounce Method
+  if(debounce(buttonStart) && !debounce(buttonStop)){
+      if (digitalRead(button) == 0 )  // if button is pressed
+      if (stepDebounce()){  // debounce button signal
+         direction_ *= -1;  // reverse direction variable
           while ( stepDebounce() ) ;  // wait for button release
-        }
-        stepper.setSpeed(speed_);
-        stepper.step(direction_); 
-        write_pb(POWER_PIN, 1);
-        value = adc_read(SIGNAL_PIN);
-        write_pb(POWER_PIN, 0);
-        if(Running == true){
-          displayLCD();
-          write_pb(ledPinB, 1);
-          Disabled = false;
-          if(DHT.temperature <= TEMPHOLD){
-            Idle = true;
-            Running = false;
-            write_pb(ledPinB, 0);
-          }
-          if(value < THRESHOLD){
-            Error = true;
-            Running = false;
-            write_pb(ledPinB, 0);
-          } 
-        }
-        if(Idle == true){
-          displayLCD();
-          Disabled = false;
-          if(DHT.temperature > TEMPHOLD){
-            Running = true;
-            Idle = false;
-            write_pb(ledPinG, 0);
-          }
-          if(value <= THRESHOLD){
-            Error = true;
-            Idle = false;
-            write_pb(ledPinG, 0);
-          }
-        }
-        if(Error == true){
-          Disabled = false;
-          stepper.setSpeed(0);
-          lcd.setCursor(0, 0);
-          write_pb(ledPinR, 1);
-          lcd.print("Water Level Too Low");
-          if(digitalRead(buttonReset) == 1){
-            write_pb(ledPinR, 0);
-            Idle = true;
-            stepper.setSpeed(speed_);
-            Error = false;
-          }
-        }
-        if(Disabled == true){
-          Idle = true;
-          write_pb(ledPinY, 1);
-          //Don't know how to do ISR, someone figure it out for me pls - Raymond
-        }
-   }
-    
-  //Toggle Switch Method
-  /*newSwitchState = digitalRead(buttonPin);
-  if(newSwitchState != oldSwitchState){
-    if(newSwitchState == HIGH){
-      if(LEDstatus == LOW){
-        //digitalWrite(mainLED, HIGH);
-        if ( digitalRead(button) == 0 )  // if button is pressed
-        if ( stepDebounce() )  // debounce button signal
-        {
-          direction_ *= -1;  // reverse direction variable
-          while ( stepDebounce() ) ;  // wait for button release
-        }
-        stepper.setSpeed(speed_);
-        stepper.step(direction_); 
-        write_pb(POWER_PIN, 1);
-        value = adc_read(SIGNAL_PIN);
-        write_pb(POWER_PIN, 0);
-        if(Running == true || LEDstatus == LOW){
-          displayLCD();
-          write_pb(ledPinB, 1);
-          Disabled = false;
-          if(DHT.temperature <= TEMPHOLD){
-            Idle = true;
-            Running = false;
-            write_pb(ledPinB, 0);
-          }
-          if(value < THRESHOLD){
-            Error = true;
-            Running = false;
-            write_pb(ledPinB, 0);
-          } 
-        }
-        if(Idle == true){
-          displayLCD();
-          write_pb(ledPinG, 1);
-          Disabled = false;
-          if(DHT.temperature > TEMPHOLD){
-            Running = true;
-            Idle = false;
-            write_pb(ledPinG, 0);
-          }
-          if(value <= THRESHOLD){
-            Error = true;
-            Idle = false;
-            write_pb(ledPinG, 0);
-          }
-        }
-        if(Error == true){
-          Disabled = false;
-          stepper.setSpeed(0);
-          lcd.setCursor(0, 0);
-          write_pb(ledPinR, 1);
-          lcd.print("Water Level Too Low");
-          if(digitalRead(buttonReset) == 1){
-            write_pb(ledPinR, 0);
-            Idle = true;
-            stepper.setSpeed(speed_);
-            Error = false;
-          }
-        }
-        if(Disabled == true){
-          Idle = true;
-          write_pb(ledPinY, 1);
-          //Don't know how to do ISR, someone figure it out for me pls - Raymond
-        }
-        LEDstatus = HIGH;
       }
-      else{
-        //digitalWrite(mainLED, LOW);
-        LEDstatus = LOW;
-        Running = false;
-        Idle = false;
-        Error = false;
-        Disabled = false;
+      stepper.setSpeed(speed_);
+      stepper.step(direction_); 
+      write_pb(POWER_PIN, 1);
+      value = adc_read(SIGNAL_PIN);
+      write_pb(POWER_PIN, 0);
+      if(Running == true){
+        write_pb(ledPinB, 1);
+        if(DHT.temperature <= TEMPHOLD){
+          Idle = true;
+          Running = false;
+          write_pb(ledPinB, 0);
+          serialTime();
+        }
+        if(value < THRESHOLD){
+          Error = true;
+          Running = false;
+          write_pb(ledPinB, 0);
+          serialTime();
+        }
+        lcd.setCursor(0, 0);
+        lcd.print("R");
+        displayLCD();
       }
-    }
-    oldSwitchState = newSwitchState;
-  }*/
+      if(Idle == true){
+        write_pb(ledPinG, 1);
+        if(DHT.temperature > TEMPHOLD){
+          Running = true;
+          Idle = false;
+          write_pb(ledPinG, 0);
+          serialTime();
+        }
+        if(value <= THRESHOLD){
+          Error = true;
+          Idle = false;
+          write_pb(ledPinG, 0);
+          serialTime();
+        }
+        lcd.setCursor(0, 0);
+        lcd.print("I");
+        displayLCD();
+      }
+      if(Error == true){
+       stepper.setSpeed(0);
+       write_pb(ledPinR, 1);
+       lcd.setCursor(0, 0);
+       lcd.print("Water Level Too Low");
+       ErrorLCD();
+       if(value > THRESHOLD){
+          write_pb(buttonReset, 1);
+       }
+       if(digitalRead(buttonReset) == 1){
+          Idle = true;
+          stepper.setSpeed(speed_);
+          Error = false;
+          write_pb(ledPinR, 0);
+          write_pb(buttonReset, 0);
+          serialTime();
+       }
+     }
+  }
+  else if(debounce(buttonStop) && !debounce(buttonStart)){
+        lcd.setCursor(0, 0);
+        lcd.print("Disabled");
+        write_pb(ledPinY, 1);
+        serialTime();
+        Idle = true;
+        //Don't know how to do ISR, someone figure it out for me pls - Raymond
+  }
+  else if(debounce(buttonStart) && debounce(buttonStop)){
+        lcd.setCursor(0, 0);
+        lcd.print("Turn One Button Off");
+  }
+  else{
+        lcd.setCursor(0, 0);
+        lcd.print("Turn One Button On");
+  }
+}
+void serialTime(){
+  DS3231_get(&t);
+  Serial.print("Date : ");
+  Serial.print(t.mday);
+  Serial.print("/");
+  Serial.print(t.mon);
+  Serial.print("/");
+  Serial.print(t.year);
+  Serial.print("\t Hour : ");
+  Serial.print(t.hour);
+  Serial.print(":");
+  Serial.print(t.min);
+  Serial.print(".");
+  Serial.println(t.sec);
+ 
+  delay(1000);
+}
+void ErrorLCD(){
+  lcd.setCursor(0, 1);
+  lcd.print("Hum.   ");
+  lcd.print(DHT.humidity);
+  lcd.setCursor(7, 1);
+  lcd.print("Temp.  ");
+  lcd.print(DHT.temperature);
 }
 void displayLCD(){
   DHT.read11(dht_apin);
-  lcd.setCursor(0, 0);
-  lcd.print("R");
   lcd.setCursor(3, 0);
   lcd.print("Hum.   ");
   lcd.print(DHT.humidity);
   lcd.setCursor(3, 1);
   lcd.print("Temp.  ");
-  lcd.print(DHT.temperature); 
+  lcd.print(DHT.temperature);
+
+  delay(2000);
 }
 void set_PB_as_output(unsigned char pin_num)
 {
