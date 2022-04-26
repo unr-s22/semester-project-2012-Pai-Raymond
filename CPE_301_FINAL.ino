@@ -47,6 +47,7 @@ const int ledPinG = 22;
 const int ledPinY = 24;
 const int ledPinB = 26;
 const int ledPinR = 28;
+const int debounceDelay = 10;
 
 LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
 Stepper stepper(STEPS, 8, 10, 9, 11);
@@ -54,7 +55,7 @@ Stepper stepper(STEPS, 8, 10, 9, 11);
 boolean oldSwitchState = LOW;
 boolean newSwitchState = LOW;
 boolean LEDstatus = LOW;
-boolean Disabled = false, Idle = false, Running = false, Error = false;
+boolean Disabled = false, Idle = false, Running = true, Error = false;
 
 void setup(){
  Serial.begin(9600);
@@ -90,8 +91,8 @@ void setup(){
   t.min=30;
   t.sec=0;
   t.mday=25;
-  t.mon=12;
-  t.year=2019;
+  t.mon=4;
+  t.year=2022;
  
   DS3231_set(t); 
 }
@@ -147,18 +148,14 @@ void loop(){
   Serial.println(t.sec);
  
   delay(1000);*/
-  newSwitchState = digitalRead(buttonPin);
-  if(newSwitchState != oldSwitchState){
-    if(newSwitchState == HIGH){
-      Running = true;
-      if(LEDstatus == LOW){
-        //digitalWrite(mainLED, HIGH);
-        LEDstatus = HIGH;
-        if ( digitalRead(button) == 0 )  // if button is pressed
-        if ( debounce() )  // debounce button signal
+  
+  //Debounce Method
+  if(debounce(buttonPin)){
+    if ( digitalRead(button) == 0 )  // if button is pressed
+        if ( stepDebounce() )  // debounce button signal
         {
           direction_ *= -1;  // reverse direction variable
-          while ( debounce() ) ;  // wait for button release
+          while ( stepDebounce() ) ;  // wait for button release
         }
         stepper.setSpeed(speed_);
         stepper.step(direction_); 
@@ -166,15 +163,7 @@ void loop(){
         value = adc_read(SIGNAL_PIN);
         write_pb(POWER_PIN, 0);
         if(Running == true){
-          DHT.read11(dht_apin);
-          lcd.setCursor(0, 0);
-          lcd.print("R");
-          lcd.setCursor(3, 0);
-          lcd.print("Hum.   ");
-          lcd.print(DHT.humidity);
-          lcd.setCursor(3, 1);
-          lcd.print("Temp.  ");
-          lcd.print(DHT.temperature); 
+          displayLCD();
           write_pb(ledPinB, 1);
           Disabled = false;
           if(DHT.temperature <= TEMPHOLD){
@@ -189,15 +178,73 @@ void loop(){
           } 
         }
         if(Idle == true){
-          DHT.read11(dht_apin);
+          displayLCD();
+          Disabled = false;
+          if(DHT.temperature > TEMPHOLD){
+            Running = true;
+            Idle = false;
+            write_pb(ledPinG, 0);
+          }
+          if(value <= THRESHOLD){
+            Error = true;
+            Idle = false;
+            write_pb(ledPinG, 0);
+          }
+        }
+        if(Error == true){
+          Disabled = false;
+          stepper.setSpeed(0);
           lcd.setCursor(0, 0);
-          lcd.print("I");
-          lcd.print("Hum.   ");
-          lcd.print(DHT.humidity);
-          lcd.setCursor(3, 0);
-          lcd.setCursor(3, 1);
-          lcd.print("Temp.  ");
-          lcd.print(DHT.temperature); 
+          write_pb(ledPinR, 1);
+          lcd.print("Water Level Too Low");
+          if(digitalRead(buttonReset) == 1){
+            write_pb(ledPinR, 0);
+            Idle = true;
+            stepper.setSpeed(speed_);
+            Error = false;
+          }
+        }
+        if(Disabled == true){
+          Idle = true;
+          write_pb(ledPinY, 1);
+          //Don't know how to do ISR, someone figure it out for me pls - Raymond
+        }
+   }
+    
+  //Toggle Switch Method
+  /*newSwitchState = digitalRead(buttonPin);
+  if(newSwitchState != oldSwitchState){
+    if(newSwitchState == HIGH){
+      if(LEDstatus == LOW){
+        //digitalWrite(mainLED, HIGH);
+        if ( digitalRead(button) == 0 )  // if button is pressed
+        if ( stepDebounce() )  // debounce button signal
+        {
+          direction_ *= -1;  // reverse direction variable
+          while ( stepDebounce() ) ;  // wait for button release
+        }
+        stepper.setSpeed(speed_);
+        stepper.step(direction_); 
+        write_pb(POWER_PIN, 1);
+        value = adc_read(SIGNAL_PIN);
+        write_pb(POWER_PIN, 0);
+        if(Running == true || LEDstatus == LOW){
+          displayLCD();
+          write_pb(ledPinB, 1);
+          Disabled = false;
+          if(DHT.temperature <= TEMPHOLD){
+            Idle = true;
+            Running = false;
+            write_pb(ledPinB, 0);
+          }
+          if(value < THRESHOLD){
+            Error = true;
+            Running = false;
+            write_pb(ledPinB, 0);
+          } 
+        }
+        if(Idle == true){
+          displayLCD();
           write_pb(ledPinG, 1);
           Disabled = false;
           if(DHT.temperature > TEMPHOLD){
@@ -229,6 +276,7 @@ void loop(){
           write_pb(ledPinY, 1);
           //Don't know how to do ISR, someone figure it out for me pls - Raymond
         }
+        LEDstatus = HIGH;
       }
       else{
         //digitalWrite(mainLED, LOW);
@@ -240,7 +288,18 @@ void loop(){
       }
     }
     oldSwitchState = newSwitchState;
-  }
+  }*/
+}
+void displayLCD(){
+  DHT.read11(dht_apin);
+  lcd.setCursor(0, 0);
+  lcd.print("R");
+  lcd.setCursor(3, 0);
+  lcd.print("Hum.   ");
+  lcd.print(DHT.humidity);
+  lcd.setCursor(3, 1);
+  lcd.print("Temp.  ");
+  lcd.print(DHT.temperature); 
 }
 void set_PB_as_output(unsigned char pin_num)
 {
@@ -257,7 +316,7 @@ void write_pb(unsigned char pin_num, unsigned char state)
     *port_b |= 0x01 << pin_num;
   }
 }
-bool debounce()
+bool stepDebounce()
 {
   byte count = 0;
   for(byte i = 0; i < 5; i++) {
@@ -314,6 +373,7 @@ unsigned int adc_read(unsigned char adc_channel_num){
   // return the result in the ADC data register
   return ADCL + ADCH * 256;
 }
+
 void my_delay(unsigned int ticks){
   *myTCCR1B &= 0xF8;
   *myTCNT1 = (unsigned int) (65536 - ticks);
@@ -321,4 +381,25 @@ void my_delay(unsigned int ticks){
   while((*myTIFR1 & 0x01) == 0);
   *myTCCR1B &= 0xF8;
   *myTIFR1 |= 0x01;
+}
+boolean debounce(int pin){
+  boolean state;
+  boolean previousState;
+  // store switch state
+  previousState = digitalRead(pin);
+  for (int counter = 0; counter < debounceDelay; counter++){
+    // wait for 1 millisecond
+    delay(1);
+    // read the current pin value
+    state = digitalRead(pin);
+    // if the current value of the pin is differ
+    if ( state != previousState){
+      // reset the counter if the state changes
+      counter = 0;
+      // and save the current state
+      previousState = state;
+    }
+  }
+  // here when the switch state has been stable
+  return state;
 }
