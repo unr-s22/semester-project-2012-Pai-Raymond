@@ -1,3 +1,4 @@
+
 #include <dht.h>
 #include <LiquidCrystal.h>
 #include <Stepper.h>
@@ -16,9 +17,9 @@ volatile unsigned char* pin_b  = (unsigned char*) 0x23;
 
 #define dht_apin A2 // Analog Pin sensor is connected to
 #define POWER_PIN 7 // water sensor power pin
-#define SIGNAL_PIN 1 // water sensor analog pin
+#define SIGNAL_PIN 0 // water sensor analog pin
 #define THRESHOLD 8 // water sensor threshold limit
-#define STEPS 32 // stepper motor steps
+#define STEPS 55 // stepper motor steps
 #define TEMPHOLD 20.0 // Temperatrue Thresholt
 
 
@@ -28,11 +29,9 @@ unsigned int value = 0; // variable to store the sensor value
 //stepper motor var
 const int button = 6; // direction control button is connected to Arduino pin 6
 const int pot = A0; // speed control potentiometer is connected to analog pin 0
-const int speed_ = 500;
-int direction_ = 1;
 
 //LCD var
-const int RS = 11, EN = 10, D4 = 2, D5 = 3, D6 = 4, D7 = 5;
+const int RS = 12, EN = 7, D4 = 2, D5 = 3, D6 = 4, D7 = 5;
 
 //Humidity and Temperature var
 dht DHT;
@@ -40,29 +39,25 @@ dht DHT;
 //Real-Time Clock var
 struct ts t;
 
-const int buttonStart = 8;
-const int buttonStop = 9;
-const int buttonReset = 32;
-//const int mainLED;
+const int buttonStart = 52;
+const int buttonStop = 50;
+const int buttonReset = 48;
 const int ledPinG = 22;
 const int ledPinY = 24;
 const int ledPinB = 26;
 const int ledPinR = 28;
-const int debounceDelay = 10;
+const int pin31 = 2;
 
 LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
+//Stepper stepper(STEPS, 53, 51, 49, 47);
 Stepper stepper(STEPS, 8, 10, 9, 11);
-
-boolean oldSwitchState = LOW;
-boolean newSwitchState = LOW;
-boolean LEDstatus = LOW;
 boolean Idle = false, Running = true, Error = false;
-
 void setup(){
  Serial.begin(9600);
- 
- pinMode(buttonStart, INPUT);
- pinMode(buttonReset, INPUT);
+
+ pinMode(pin31, OUTPUT);
+ pinMode(buttonStart, INPUT_PULLUP);
+ pinMode(buttonReset, INPUT_PULLUP);
  pinMode(buttonStop, INPUT);
  
  pinMode(ledPinG, OUTPUT);
@@ -74,7 +69,7 @@ void setup(){
  write_pb(ledPinY, 0);
  write_pb(ledPinB, 0);
  write_pb(ledPinR, 0);
- 
+ digitalWrite(pin31, HIGH);
  //Stepper Motor Setup
  pinMode(button, INPUT_PULLUP);
  //Water Sensor Setup
@@ -93,17 +88,159 @@ void setup(){
   /*----------------------------------------------------------------------------
   In order to synchronise your clock module, insert timetable values below !
   ----------------------------------------------------------------------------*/
- t.hour = 12; 
- t.min = 30;
- t.sec = 0;
- t.mday = 25;
- t.mon = 4;
- t.year = 2022;
+  t.hour=12; 
+  t.min=30;
+  t.sec=0;
+  t.mday=27;
+  t.mon=4;
+  t.year = 2122;
  
  DS3231_set(t); 
 }
+bool pressed;
+int direction_ = 1, speed_ = 500, state = 0, stateSys = 0;
 void loop(){
-  //LCD Monitor with Temp/Hum Sensor 
+   if(state == 0 && digitalRead(buttonStart) == HIGH){
+      state = 1;
+      stateSys =! stateSys;
+   }
+   if(digitalRead(buttonStop) == HIGH){
+        state = 0;
+        stateSys = 0;
+   }
+   if(stateSys){
+      write_pb(POWER_PIN, 1);               
+      value = adc_read(SIGNAL_PIN);
+      write_pb(POWER_PIN, 0);
+      if(Running == true){
+        write_pb(ledPinB, 1);
+        if(DHT.temperature <= TEMPHOLD){
+          Idle = true;
+          Running = false;
+          write_pb(ledPinB, 0);
+          serialTime("Running -> Idle");
+          lcd.clear();
+        }
+        else if(value < THRESHOLD){
+          Error = true;
+          Running = false;
+          write_pb(ledPinB, 0);
+          serialTime("Running -> Error");
+          lcd.clear();
+        }
+        lcd.setCursor(0, 0);
+        lcd.print("R");
+        displayLCD();
+      }
+      if(Idle == true){
+        write_pb(ledPinG, 1);
+        if(DHT.temperature > TEMPHOLD){
+          Running = true;
+          Idle = false;
+          write_pb(ledPinG, 0);
+          serialTime("Idle -> Running");
+          lcd.clear();
+        }
+        else if(value <= THRESHOLD){
+          Error = true;
+          Idle = false;
+          write_pb(ledPinG, 0);
+          serialTime("Idle -> Error");
+          lcd.clear();
+        }
+        lcd.setCursor(0, 0);
+        lcd.print("I");
+        displayLCD();
+      }
+      if(Error == true){
+        lcd.display();
+        lcd.setCursor(0, 0);
+        lcd.print("E");
+        displayLCD();
+        if(value > THRESHOLD){
+            Idle = true;
+            Error = false;
+            write_pb(ledPinR, 0);
+            lcd.clear();
+            serialTime("Error -> Idle");
+            speed_ = 500;
+        }
+        if(digitalRead(buttonReset) == 1){
+            Idle = true;
+            Error = false;
+            write_pb(ledPinR, 0);
+            lcd.clear();
+            serialTime("Error -> Idle");
+            speed_ = 500;
+        }
+      }
+  }
+  else{
+    lcd.noDisplay();
+  }
+}
+ /*
+ motorAct(speed_);
+      if(Running == true){
+        write_pb(ledPinB, 1);
+        if(DHT.temperature <= TEMPHOLD){
+          Idle = true;
+          Running = false;
+          write_pb(ledPinB, 0);
+          serialTime("Running -> Idle");
+        }
+        else if(value < THRESHOLD){
+          Error = true;
+          Running = false;
+          write_pb(ledPinB, 0);
+          serialTime("Running -> Error");
+        }
+        else{
+          lcd.setCursor(0, 0);
+          lcd.print("R");
+          displayLCD();
+        }
+      }
+      if(Idle == true){
+        write_pb(ledPinG, 1);
+        if(DHT.temperature > TEMPHOLD){
+          Running = true;
+          Idle = false;
+          write_pb(ledPinG, 0);
+          serialTime("Idle -> Running");
+        }
+        else if(value <= THRESHOLD){
+          Error = true;
+          Idle = false;
+          write_pb(ledPinG, 0);
+          serialTime("Idle -> Error");
+        }
+        else{
+          lcd.setCursor(0, 0);
+          lcd.print("I");
+          displayLCD();
+        }
+      }
+      if(Error == true){
+        motorAct(0);
+        write_pb(ledPinR, 1);
+        lcd.setCursor(0, 0);
+        lcd.print("Low");
+        ErrorLCD();
+        /*if(value > THRESHOLD){
+            write_pb(buttonReset, 1);
+        }
+        if(digitalRead(buttonReset) == 1){
+            Idle = true;
+            motorAct(speed_);
+            Error = false;
+            write_pb(ledPinR, 0);
+            write_pb(buttonReset, 0);
+            serialTime("Error -> Idle");
+        }
+        */
+
+    //LCD Monitor with Temp/Hum Sensor 
    /*DHT.read11(dht_apin);
    lcd.setCursor(0, 0);
    lcd.print("R");
@@ -154,93 +291,20 @@ void loop(){
   Serial.println(t.sec);
  
   delay(1000);*/
-  
-//Debounce Method
-  if(debounce(buttonStart) && !debounce(buttonStop)){
-      if (digitalRead(button) == 0 )  // if button is pressed
+void motorAct(int speed_){
+  if (digitalRead(button) == 0 ) { // if button is pressed
       if (stepDebounce()){  // debounce button signal
          direction_ *= -1;  // reverse direction variable
-          while ( stepDebounce() ) ;  // wait for button release
+         while (stepDebounce());  // wait for button release
       }
-      stepper.setSpeed(speed_);
-      stepper.step(direction_); 
-      write_pb(POWER_PIN, 1);
-      value = adc_read(SIGNAL_PIN);
-      write_pb(POWER_PIN, 0);
-      if(Running == true){
-        write_pb(ledPinB, 1);
-        if(DHT.temperature <= TEMPHOLD){
-          Idle = true;
-          Running = false;
-          write_pb(ledPinB, 0);
-          serialTime();
-        }
-        if(value < THRESHOLD){
-          Error = true;
-          Running = false;
-          write_pb(ledPinB, 0);
-          serialTime();
-        }
-        lcd.setCursor(0, 0);
-        lcd.print("R");
-        displayLCD();
-      }
-      if(Idle == true){
-        write_pb(ledPinG, 1);
-        if(DHT.temperature > TEMPHOLD){
-          Running = true;
-          Idle = false;
-          write_pb(ledPinG, 0);
-          serialTime();
-        }
-        if(value <= THRESHOLD){
-          Error = true;
-          Idle = false;
-          write_pb(ledPinG, 0);
-          serialTime();
-        }
-        lcd.setCursor(0, 0);
-        lcd.print("I");
-        displayLCD();
-      }
-      if(Error == true){
-       stepper.setSpeed(0);
-       write_pb(ledPinR, 1);
-       lcd.setCursor(0, 0);
-       lcd.print("Water Level Too Low");
-       ErrorLCD();
-       if(value > THRESHOLD){
-          write_pb(buttonReset, 1);
-       }
-       if(digitalRead(buttonReset) == 1){
-          Idle = true;
-          stepper.setSpeed(speed_);
-          Error = false;
-          write_pb(ledPinR, 0);
-          write_pb(buttonReset, 0);
-          serialTime();
-       }
-     }
   }
-  else if(debounce(buttonStop) && !debounce(buttonStart)){
-        lcd.setCursor(0, 0);
-        lcd.print("Disabled");
-        write_pb(ledPinY, 1);
-        serialTime();
-        Idle = true;
-        //Don't know how to do ISR, someone figure it out for me pls - Raymond
-  }
-  else if(debounce(buttonStart) && debounce(buttonStop)){
-        lcd.setCursor(0, 0);
-        lcd.print("Turn One Button Off");
-  }
-  else{
-        lcd.setCursor(0, 0);
-        lcd.print("Turn One Button On");
-  }
+  stepper.setSpeed(speed_);
+  stepper.step(direction_); 
 }
-void serialTime(){
+void serialTime(String state){
   DS3231_get(&t);
+  Serial.print(state);
+  Serial.print("\n");
   Serial.print("Date : ");
   Serial.print(t.mday);
   Serial.print("/");
@@ -254,14 +318,15 @@ void serialTime(){
   Serial.print(".");
   Serial.println(t.sec);
  
-  delay(1000);
+  //delay(1000);
 }
 void ErrorLCD(){
-  lcd.setCursor(0, 1);
-  lcd.print("Hum.   ");
+  DHT.read11(dht_apin);
+  lcd.setCursor(3, 0);
+  lcd.print("   Hum.  ");
   lcd.print(DHT.humidity);
-  lcd.setCursor(7, 1);
-  lcd.print("Temp.  ");
+  lcd.setCursor(3, 1);
+  lcd.print("   Temp. ");
   lcd.print(DHT.temperature);
 }
 void displayLCD(){
@@ -273,7 +338,7 @@ void displayLCD(){
   lcd.print("Temp.  ");
   lcd.print(DHT.temperature);
 
-  delay(2000);
+  //delay(2000);
 }
 void set_PB_as_output(unsigned char pin_num)
 {
@@ -355,25 +420,4 @@ void my_delay(unsigned int ticks){
   while((*myTIFR1 & 0x01) == 0);
   *myTCCR1B &= 0xF8;
   *myTIFR1 |= 0x01;
-}
-boolean debounce(int pin){
-  boolean state;
-  boolean previousState;
-  // store switch state
-  previousState = digitalRead(pin);
-  for (int counter = 0; counter < debounceDelay; counter++){
-    // wait for 1 millisecond
-    delay(1);
-    // read the current pin value
-    state = digitalRead(pin);
-    // if the current value of the pin is differ
-    if ( state != previousState){
-      // reset the counter if the state changes
-      counter = 0;
-      // and save the current state
-      previousState = state;
-    }
-  }
-  // here when the switch state has been stable
-  return state;
 }
