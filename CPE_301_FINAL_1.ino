@@ -46,9 +46,8 @@ struct ts t;
 
 //Button Setup
 const int buttonStart = 5;
-const int buttonStop = 3;
 const int buttonReset = 1;
-const int buttonDC = 3;
+const int dcPin = 3;
 
 //LED Setup
 const int ledPinG = 6;
@@ -79,9 +78,6 @@ void setup(){
  //Setting Intputs
  setInput(ddr_e, buttonStart);
  enablePullup(ddr_e, buttonStart);
- setInput(ddr_b, buttonStop);
- enablePullup(ddr_b, buttonStop);
- setInput(ddr_l, buttonReset);
  enablePullup(ddr_l, buttonReset);
 
  //Setting Outputs
@@ -89,7 +85,7 @@ void setup(){
  setOutput(ddr_a, ledPinY);
  setOutput(ddr_a, ledPinB);
  setOutput(ddr_a, ledPinR);
- setOutput(ddr_l, buttonDC);
+ setOutput(ddr_l, dcPin);
  
  //LED setup values
  write_port(port_a, ledPinG, 0);
@@ -119,8 +115,6 @@ void setup(){
  DS3231_set(t); 
 
  //Setting and Enabling ISR 
- //PCICR  |= 0x1 << PCIE0;
- //PCMSK0 |= 0x1 << PCINT1;
  EICRB |= 1 << ISC51;
  EICRB &= ~(1 << ISC50);
  EIMSK |= 1 << INT5;
@@ -129,14 +123,6 @@ void setup(){
  
 }
 void loop(){
-   /*if(state == 0 && digital_read(pin_b, buttonStart) == HIGH){
-      state = 1;
-      stateSys =! stateSys;
-   }
-   if(state == 1 && digital_read(pin_b, buttonStop) == HIGH){
-        state = 0;
-        stateSys = false;
-   }*/
    while(previousState == false && currentState == true){
       write_port(port_a, ledPinY, 0);
       if(lcdState == 1){
@@ -152,17 +138,17 @@ void loop(){
       
       //Runs Running State
       if(Running == true){
-        write_port(port_l, buttonDC, 1);
+        write_port(port_l, dcPin, 1);
         lcd.setCursor(0, 0);
         lcd.print("R");
         displayLCD();
         write_port(port_a, ledPinB, 1);
-        if(DHT.temperature <= TEMPHOLD){
+        if(DHT.temperature <= TEMPHOLD && value > THRESHOLD){
           lcd.clear();
           Idle = true;
           Running = false;
           write_port(port_a, ledPinB, 0);
-          write_port(port_l, buttonDC, 0);
+          write_port(port_l, dcPin, 0);
           serialTime("Running -> Idle");
         }
         else if(value < THRESHOLD){
@@ -170,7 +156,7 @@ void loop(){
           Error = true;
           Running = false;
           write_port(port_a, ledPinB, 0);
-          write_port(port_l, buttonDC, 0);
+          write_port(port_l, dcPin, 0);
           serialTime("Running -> Error");
         }
       }
@@ -180,7 +166,7 @@ void loop(){
         lcd.print("I");
         displayLCD();
         write_port(port_a, ledPinG, 1);
-        if(DHT.temperature > TEMPHOLD){
+        if(DHT.temperature > TEMPHOLD && value > THRESHOLD){
           lcd.clear();
           Running = true;
           Idle = false;
@@ -215,7 +201,7 @@ void loop(){
       write_port(port_a, ledPinG, 0);
       write_port(port_a, ledPinR, 0);
       write_port(port_a, ledPinY, 1);
-      write_port(port_l, buttonDC, 0);
+      write_port(port_l, dcPin, 0);
       if(lcdState == 0){
         lcd.clear();
       }
