@@ -47,7 +47,7 @@ struct ts t;
 //Button Setup
 const int buttonStart = 5;
 const int buttonReset = 1;
-const int dcPin = 3;
+const int dcPin = 7;
 
 //LED Setup
 const int ledPinG = 6;
@@ -77,6 +77,7 @@ void setup(){
 
  //Setting Intputs
  setInput(ddr_e, buttonStart);
+ setIntput(ddr_l, buttonReset);
  enablePullup(ddr_e, buttonStart);
  enablePullup(ddr_l, buttonReset);
 
@@ -111,7 +112,14 @@ void setup(){
  DS3231_init(DS3231_CONTROL_INTCN);
  
  //Inserting starting clock value;
- t.sec = 0;
+ t.hour=9; 
+ t.min=32;
+ t.sec=0;
+ t.mday=4;
+ t.mon=5;
+ t.year=2122;
+ 
+ DS3231_set(t); 
  DS3231_set(t); 
 
  //Setting and Enabling ISR 
@@ -139,10 +147,10 @@ void loop(){
       //Runs Running State
       if(Running == true){
         write_port(port_l, dcPin, 1);
+        write_port(port_a, ledPinB, 1);
         lcd.setCursor(0, 0);
         lcd.print("R");
         displayLCD();
-        write_port(port_a, ledPinB, 1);
         if(DHT.temperature <= TEMPHOLD && value > THRESHOLD){
           lcd.clear();
           Idle = true;
@@ -226,7 +234,7 @@ void motorAct(int speed_){
   stepper.setSpeed(speed_);
   stepper.step(direction_); 
 }
-//Enable ISR to pin 52
+//Enable ISR to pin 5
 ISR(INT5_vect){
   previousState =! previousState;
   currentState =! currentState;
@@ -240,9 +248,18 @@ void motorRun(){
 //Prints Serial Time and state change
 void serialTime(String state){
   DS3231_get(&t);
-  Serial.print(state);
-  Serial.print("\n");
-  Serial.print("Seconds: ");
+  Serial.println(state);
+  Serial.print("Date : ");
+  Serial.print(t.mday);
+  Serial.print("/");
+  Serial.print(t.mon);
+  Serial.print("/");
+  Serial.print(t.year);
+  Serial.print("\t Hour : ");
+  Serial.print(t.hour);
+  Serial.print(":");
+  Serial.print(t.min);
+  Serial.print(".");
   Serial.println(t.sec);
 }
 
