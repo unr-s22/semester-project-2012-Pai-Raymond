@@ -218,7 +218,7 @@ void loop(){
   }
 }
 void motorAct(int speed_){
-  if (digitalRead(button) == 0 && Error == false) { // if button is pressed
+  if (digitalRead(button) == 0) { // if button is pressed
       if (stepDebounce()){  // debounce button signal
          direction_ *= -1;  // reverse direction variable
          if(direction_ == -1){
