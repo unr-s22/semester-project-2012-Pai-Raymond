@@ -76,7 +76,7 @@ void setup(){
 
  //Setting Intputs
  setInput(ddr_e, buttonStart);
- setIntput(ddr_l, buttonReset);
+ setInput(ddr_l, buttonReset);
  enablePullup(ddr_e, buttonStart);
  enablePullup(ddr_l, buttonReset);
 
